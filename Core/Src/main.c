@@ -22,8 +22,6 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include <stdio.h>
-#include <string.h>
 #include "sdcard.h"
 #include "i2c_slave.h"
 #include "adc.h"
@@ -49,6 +47,8 @@ ADC_HandleTypeDef hadc1;
 
 I2C_HandleTypeDef hi2c1;
 
+RTC_HandleTypeDef hrtc;
+
 SPI_HandleTypeDef hspi2;
 
 TIM_HandleTypeDef htim1;
@@ -73,6 +73,7 @@ static void MX_TIM1_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM4_Init(void);
+static void MX_RTC_Init(void);
 /* USER CODE BEGIN PFP */
 #ifdef __GNUC__
 #define PUTCHAR_PROTOTYPE int __io_putchar(int ch)
@@ -97,15 +98,23 @@ PUTCHAR_PROTOTYPE {
  */
 
 volatile uint8_t timer_flag = 0;
+static volatile uint8_t busyFlag = 0;
+
+uint8_t busy_flag_getter()
+{
+	return busyFlag;
+}
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-	HAL_ResumeTick();
+	//HAL_ResumeTick();
     if (htim->Instance == TIM2)
     {
         // TIM4 just overflowed -> 12 hours elapsed
         // Do your code here
-    	timer_flag = 1;
+    	if (busyFlag == false){
+    		timer_flag = 1;
+    	}
     }
 }
 
@@ -134,7 +143,7 @@ void main_routine(void) {
 	printf("fully initialized, +5V devices off, delaying 5 seconds\r\n");
 	HAL_Delay(5000);
 
-	turn_on_5v_plane();
+	//turn_on_5v_plane();
 
 	printf("+5V device powered, delaying 5 seconds\r\n");
 	HAL_Delay(5000);
@@ -146,7 +155,7 @@ void main_routine(void) {
 
 	// keep the filename as short as possible
 	// e.g. "sample" can only write 10 files before it doesnt want to make anymore
-	// this isa bug
+	// this is a bug
 	open_sdcard_file_write("s");
 
 	// may need to keep small or increase max size in write function if this gets too long
@@ -180,9 +189,9 @@ void main_routine(void) {
 	// always do this after testing is done so if power is cut, no data is lost
 	unmount_sdcard();
 
-	turn_off_5v_plane();
+	//turn_off_5v_plane();
 
-	printf("+5V devices off, delaying 5 seconds\r\n");
+	//printf("+5V devices off, delaying 5 seconds\r\n");
 	HAL_Delay(5000);
 
 	//------------------------- end cycle
@@ -231,6 +240,7 @@ int main(void)
   MX_I2C1_Init();
   MX_TIM2_Init();
   MX_TIM4_Init();
+  MX_RTC_Init();
   /* USER CODE BEGIN 2 */
 
 	//a short delay is important to let the SD card settle
@@ -248,7 +258,17 @@ int main(void)
 
 	turn_on_PWM_gen();
 
+	turn_on_5v_plane();
+
 	printf("Entering the main function\r\n");
+	//TODO: Needed else the main routine will be executed once when entering the while 1 loop
+	timer_flag = 0;
+	i2c_flag_reset();
+	busyFlag = 0;
+
+	//printf("loading buffer\r\n");
+	//load_buf();
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -260,20 +280,48 @@ int main(void)
 		//Will be replaced with an interrupt based routine
 		//The system wakes up from the sleep every 12 hrs and perform the routine
 		//the sleep is interruptible by the i2c commands
-		if(i2c_flag_getter()||timer_flag)
+		/*
+		 * TODO
+		 * Load the latest data collected and error logs to the buffers
+		 * */
+		//when programming please comment out this suspendtick
+		//else it is going to be a nightmare to load code onto the stm
+		//HAL_SuspendTick();
+		HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
+		// wake up when there is an interrupt
+		HAL_ResumeTick();
+		uint8_t i2c_flag_main = i2c_flag_getter();
+		switch(i2c_flag_main)
 		{
+			case I2C_FLAG_SET:
+				busyFlag = 1;
+				main_routine();
+				timer_flag = 0;
+				i2c_flag_reset();
+				busyFlag = 0;
+				break;
+			case I2C_FLAG_READ_DATA:
+				busyFlag = 1;
+				printf("loading buffer\r\n");
+				load_buf();
+				i2c_flag_reset();
+				busyFlag = 0;
+				break;
+			case I2C_FLAG_RESET:
+				break;
+		}
+		if(timer_flag)
+		{
+			busyFlag = 1;
 			main_routine();
 			timer_flag = 0;
 			i2c_flag_reset();
+			busyFlag = 0;
 		}
 		if(pwr_flag_getter())
 		{
-			printf("power saving mode");
+			printf("power saving mode\r\n");
 		}
-		//going back to sleep
-		HAL_Delay(5000);
-		//HAL_SuspendTick();
-		HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
 	}
   /* USER CODE END 3 */
 }
@@ -291,9 +339,10 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+  RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI_DIV2;
   RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL6;
@@ -315,7 +364,8 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_ADC;
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_RTC|RCC_PERIPHCLK_ADC;
+  PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSI;
   PeriphClkInit.AdcClockSelection = RCC_ADCPCLK2_DIV2;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
@@ -401,6 +451,64 @@ static void MX_I2C1_Init(void)
   /* USER CODE BEGIN I2C1_Init 2 */
 
   /* USER CODE END I2C1_Init 2 */
+
+}
+
+/**
+  * @brief RTC Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_RTC_Init(void)
+{
+
+  /* USER CODE BEGIN RTC_Init 0 */
+
+  /* USER CODE END RTC_Init 0 */
+
+  RTC_TimeTypeDef sTime = {0};
+  RTC_DateTypeDef DateToUpdate = {0};
+
+  /* USER CODE BEGIN RTC_Init 1 */
+
+  /* USER CODE END RTC_Init 1 */
+
+  /** Initialize RTC Only
+  */
+  hrtc.Instance = RTC;
+  hrtc.Init.AsynchPrediv = RTC_AUTO_1_SECOND;
+  hrtc.Init.OutPut = RTC_OUTPUTSOURCE_NONE;
+  if (HAL_RTC_Init(&hrtc) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /* USER CODE BEGIN Check_RTC_BKUP */
+
+  /* USER CODE END Check_RTC_BKUP */
+
+  /** Initialize RTC and set the Time and Date
+  */
+  sTime.Hours = 0x21;
+  sTime.Minutes = 0x16;
+  sTime.Seconds = 0x0;
+
+  if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BCD) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  DateToUpdate.WeekDay = RTC_WEEKDAY_MONDAY;
+  DateToUpdate.Month = RTC_MONTH_APRIL;
+  DateToUpdate.Date = 0x23;
+  DateToUpdate.Year = 0x25;
+
+  if (HAL_RTC_SetDate(&hrtc, &DateToUpdate, RTC_FORMAT_BCD) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN RTC_Init 2 */
+
+  /* USER CODE END RTC_Init 2 */
 
 }
 

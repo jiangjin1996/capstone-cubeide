@@ -24,7 +24,7 @@ FATFS USERFatFS;    /* File system object for USER logical drive */
 FIL USERFile;       /* File object for USER */
 
 /* USER CODE BEGIN Variables */
-
+extern RTC_HandleTypeDef hrtc;
 /* USER CODE END Variables */
 
 void MX_FATFS_Init(void)
@@ -45,7 +45,32 @@ void MX_FATFS_Init(void)
 DWORD get_fattime(void)
 {
   /* USER CODE BEGIN get_fattime */
-  return 0;
+	//got from: https://community.st.com/t5/stm32-mcus-products/showing-date-and-time-of-file-creation-in-sd-card/td-p/240415
+	RTC_TimeTypeDef sZeit;
+
+		RTC_DateTypeDef sDatum;
+
+		DWORD attime;
+
+		HAL_RTC_GetTime(&hrtc, &sZeit, RTC_FORMAT_BIN);
+
+		HAL_RTC_GetDate(&hrtc, &sDatum, RTC_FORMAT_BIN);
+
+		attime = (((DWORD)sDatum.Year - 1980) << 25)
+
+		| ((DWORD)sDatum.Month << 21)
+
+		| ((DWORD)sDatum.Date << 16)
+
+		| (WORD)(sZeit.Hours << 11)
+
+		| (WORD)(sZeit.Minutes << 5)
+
+		| (WORD)(sZeit.Seconds >> 1);
+
+		return attime;
+
+	//return 0;
   /* USER CODE END get_fattime */
 }
 

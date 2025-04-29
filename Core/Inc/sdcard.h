@@ -12,6 +12,11 @@
 #ifndef INC_SDCARD_H_
 #define INC_SDCARD_H_
 
+#include <string.h>
+#include "fatfs.h"
+#include <stdio.h>
+#include "main.h"
+
 //https://community.st.com/t5/stm32-mcus-products/stm32f103-sdio-fatfs-fault-issue/m-p/411951/highlight/true#M118933
 void mount_sdcard(void);
 void print_sdcard_stats(void);

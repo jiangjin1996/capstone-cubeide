@@ -9,18 +9,33 @@
 #define INC_I2C_SLAVE_H_
 
 #include "main.h"
+#include <stdlib.h>
 
 #define false 0
 #define true 1
 
-#define RxSIZE	6
+#define LATEST_NAME_MAX   16   // big enough for "S_12345.CSV\0"
 
-#define I2C_FLAG_RESET  0
-#define I2C_FLAG_SET    1
+#define RxSIZE	1
+//maximum transmit size. The actual size is variable
+#define TxSIZE  300
+#define MAX_LINE_LEN 120
+
+#define FIELDS_PER_ROW   10
+#define ROWS_TO_SEND      5
+#define MAX_VALUES      (FIELDS_PER_ROW * ROWS_TO_SEND)
+#define TXBUF_BYTES     (MAX_VALUES * 2)   // 2 bytes per uint16_t
+
+#define I2C_FLAG_RESET      0
+#define I2C_FLAG_SET        1
+#define I2C_FLAG_READ_DATA  2
+#define I2C_FLAG_READ_ERROR 3
 
 #define PWR_SAV         1
 #define PWR_NOR         0
 
+#define BUF_NOT_EMPTY   0
+#define BUF_EMPTY       1
 
 #define I2C_CMD_RESET   97 // Reset the payload board 
 #define I2C_CMD_STOP    98 // Stop all routines on the payload board 
@@ -28,7 +43,11 @@
 #define I2C_CMD_NORMAL 100 // read sensors, write to sd card
 #define I2C_CMD_PWRSAV 101 // Power saving mode, no routines till OBC says normal mode. 
 #define I2C_CMD_PWRNOR 102 // Normal power mode
+
 // TODO: add read commands
+#define I2C_CMD_SEND_DATA   197
+#define I2C_CMD_SEND_ERROR	198
+
 
 //this function let the main.c to read the i2c flag
 uint8_t i2c_flag_getter();
@@ -38,6 +57,12 @@ void i2c_flag_reset();
 
 uint8_t pwr_flag_getter();
 void pwr_flag_setter(uint8_t flag);
+
+void load_buf();
+uint8_t get_latest_s_file(char *outName, size_t outSize);
+static uint32_t parse_csv_rows(uint16_t *values);
+static uint32_t pack_values(const uint16_t *values, uint32_t count, uint8_t *buffer);
+static uint32_t append_file_timestamp(const char *filename, uint8_t *buffer, uint32_t offset);
 
 //Start listening again after the ISR finished
 extern void HAL_I2C_ListenCpltCallback (I2C_HandleTypeDef *hi2c);

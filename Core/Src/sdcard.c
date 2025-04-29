@@ -4,14 +4,12 @@
  *  Created on: Feb 9, 2024
  *      Author: karim
  */
-#include "main.h"
 //#include "cmsis_os.h"
-#include "fatfs.h"
-#include <stdio.h>
 #include "sdcard.h"
-#include <string.h>
+#include "i2c_slave.h"
 
-#define MAX_BUFF_BYTES 100
+
+#define MAX_BUFF_BYTES 255
 
 	  FIL fil; 		//File handle
 	  FRESULT fres; //Result after operations
@@ -26,6 +24,7 @@
 	  UINT bytesWrote;
 	  TCHAR* rres;
 	  char* _filename;
+
 
 void mount_sdcard(void) {
 	  //Open the file system

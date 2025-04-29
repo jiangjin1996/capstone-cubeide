@@ -31,7 +31,8 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdio.h>
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
@@ -57,6 +58,7 @@ void Error_Handler(void);
 /* USER CODE BEGIN EFP */
 void turn_off_5v_plane(void);
 void turn_on_5v_plane(void);
+uint8_t busy_flag_getter(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
