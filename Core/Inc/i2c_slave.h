@@ -15,7 +15,7 @@
 #define true 1
 
 #define LATEST_NAME_MAX   16   // big enough for "S_12345.CSV\0"
-
+#define RTC_PAYLOAD_LEN   8
 #define RxSIZE	1
 //maximum transmit size. The actual size is variable
 #define TxSIZE  300
@@ -43,6 +43,7 @@
 #define I2C_CMD_NORMAL 100 // read sensors, write to sd card
 #define I2C_CMD_PWRSAV 101 // Power saving mode, no routines till OBC says normal mode. 
 #define I2C_CMD_PWRNOR 102 // Normal power mode
+#define I2C_CMD_SET_RTC 103
 
 // TODO: add read commands
 #define I2C_CMD_SEND_DATA   197
@@ -60,6 +61,7 @@ void pwr_flag_setter(uint8_t flag);
 
 void load_buf();
 uint8_t get_latest_s_file(char *outName, size_t outSize);
+static void handle_rtc_payload(void);
 static uint32_t parse_csv_rows(uint16_t *values);
 static uint32_t pack_values(const uint16_t *values, uint32_t count, uint8_t *buffer);
 static uint32_t append_file_timestamp(const char *filename, uint8_t *buffer, uint32_t offset);
