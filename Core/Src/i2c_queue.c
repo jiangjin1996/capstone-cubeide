@@ -4,10 +4,11 @@
  *  Created on: Jul 20, 2025
  *      Author: Keerat Singh Tanwar
  */
-
+#include "i2c_queue.h"
 
 // Enqueue a command
 void enqueue_i2c_cmd(uint8_t cmd) {
+
     uint8_t next = (i2c_cmd_head + 1) % I2C_CMD_QUEUE_SIZE;
     if (next != i2c_cmd_tail) {  // Check for overflow
         i2c_cmd_queue[i2c_cmd_head] = cmd;
@@ -21,11 +22,13 @@ void enqueue_i2c_cmd(uint8_t cmd) {
 
 // Dequeue a command
 uint8_t dequeue_i2c_cmd() {
+//	HAL_Delay(1000);
     if (i2c_cmd_head == i2c_cmd_tail) {
         return 0;  // Empty queue
     }
     uint8_t cmd = i2c_cmd_queue[i2c_cmd_tail];
     i2c_cmd_tail = (i2c_cmd_tail + 1) % I2C_CMD_QUEUE_SIZE;
+    printf("I2C command removed to queue!\r\n");
     return cmd;
 }
 

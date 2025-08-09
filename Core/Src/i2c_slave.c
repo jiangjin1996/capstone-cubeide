@@ -9,6 +9,7 @@
 #include "main.h"
 #include "i2c_slave.h"
 #include "sdcard.h"
+#include "i2c_queue.h"
 
 static const uint8_t busyMsg[] = "BUSY";
 
@@ -53,6 +54,17 @@ int countRxCplt = 0; // # times rxCplt is called
 int countError = 0;  // # times error is called
 
 uint8_t count = 0;
+
+
+volatile uint8_t is_i2c_reinit_needed = 0;
+
+static volatile uint8_t status_byte = 0; // stays private here
+static uint8_t status_tx;
+
+void i2c_set_busy(uint8_t on)  { if(on) status_byte |= 0x01; else status_byte &= (uint8_t)~0x01; }
+void i2c_set_ready(uint8_t on) { if(on) status_byte |= 0x02; else status_byte &= (uint8_t)~0x02; }
+void i2c_set_error(uint8_t on) { if(on) status_byte |= 0x04; else status_byte &= (uint8_t)~0x04; }
+uint8_t i2c_get_status(void)   { return status_byte; }
 
 
 //--------------getter and setter functions-----------------------------------
@@ -283,22 +295,15 @@ static void handle_rtc_payload(void)
 //---------------------------callback functions---------------------------------------------
 void HAL_I2C_ListenCpltCallback(I2C_HandleTypeDef *hi2c)
 {
-	HAL_I2C_EnableListen_IT(hi2c);
+    if (hi2c->Instance == I2C1) {
+        HAL_I2C_EnableListen_IT(hi2c);
+    }
 }
 
 void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, uint16_t AddrMatchCode)
 {
-	if (busy_flag_getter()) {
-		// We’re busy—immediately NACK or send a “BUSY” packet
-		// Here we choose to send back a 4-byte ASCII “BUSY”
-		HAL_I2C_Slave_Seq_Transmit_IT(
-			hi2c,
-			(uint8_t*)busyMsg,
-			sizeof(busyMsg)-1,
-			I2C_FIRST_FRAME
-		);
-		return;
-	}
+	printf("busy=%u\r\n", busy_flag_getter());
+
 	if (TransferDirection == I2C_DIRECTION_TRANSMIT) // master is sending us data
 	{
 		awaitingRTC = false;
@@ -309,7 +314,16 @@ void HAL_I2C_AddrCallback(I2C_HandleTypeDef *hi2c, uint8_t TransferDirection, ui
 	else
 	{
         txCount = 0;
-        HAL_I2C_Slave_Seq_Transmit_IT(hi2c, TxBuffer, 1, I2C_FIRST_FRAME);
+        if ((status_byte & 0x02) && !(status_byte & 0x01)){
+        	  HAL_I2C_Slave_Seq_Transmit_IT(hi2c, TxBuffer, 1, I2C_FIRST_FRAME);
+
+        }
+        else {
+            // busy or not ready -> send 1-byte STATUS immediately
+            status_tx = status_byte;
+            HAL_I2C_Slave_Seq_Transmit_IT(hi2c, &status_tx, 1, I2C_NEXT_FRAME);
+        }
+
 	}
 }
 
@@ -328,6 +342,8 @@ void HAL_I2C_SlaveTxCpltCallback(I2C_HandleTypeDef *hi2c)
 // Byte-Receive Complete
 void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *hi2c)
 {
+
+	uint8_t cmd = *(hi2c->pBuffPtr - 1);
     if (!awaitingRTC) {
         // we just got cmdBuf[0]
         if (RxData[0] == I2C_CMD_SET_RTC) {
@@ -342,7 +358,14 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *hi2c)
         }
         else {
             // … handle other commands …
-            process_data();
+        	//process_data();
+            // enqueue commands instead of calling process_data directly
+        	if (busy_flag_getter()) {
+        	    printf("Busy — ignoring command 0x%02X\n", RxData[0]);
+        	    HAL_I2C_EnableListen_IT(hi2c);
+        	    return;
+        	}
+            enqueue_i2c_cmd(RxData[0]);
             HAL_I2C_EnableListen_IT(hi2c);
         }
     }
@@ -352,10 +375,16 @@ void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *hi2c)
     }
 }
 
+
 void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
 {
     countError++; 
     uint32_t errorCode = HAL_I2C_GetError(hi2c);
+
+    if (hi2c->Instance == I2C1) {
+        // Mark for reinit outside ISR context
+    	is_i2c_reinit_needed = 1;
+    }
 
     if (errorCode == 4) // AF (ack failure): master stopped sending at less than RxSIZE
     {
